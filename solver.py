@@ -14,7 +14,7 @@ Puzzle encoding:
       'S' = start point
       'H' = hole (goal)
       'X' = full pressure switch (must be vertical to activate)
-      'O' = half preccure switch (can activate either way)
+      'O' = half pressure switch (can activate either way)
       'B' = bridge square (enabled at start)
       'b' = bridge square (disabled at start)
       'T' = teleport (split block and put halves at new locations)
