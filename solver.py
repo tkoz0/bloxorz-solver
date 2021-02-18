@@ -34,9 +34,10 @@ Puzzle encoding:
       there should be 1 entry for each 'X' and 'O' in the grid
     ]
     "teleports":
-    [ list of teleports as [row,col,r1,c1,r2,c2]
+    [ list of teleports as [row,col,r1,c1,r2,c2,selected]
       row,col is the teleport location, should be a 'T' on the grid
       r1,c1 and r2,c2 are the coordinates to teleport the block halves
+      selected is 0 or 1 for which block is selected (use space key to switch)
     ]
 }
 
@@ -129,18 +130,14 @@ def solver(puzzle):
     # make mapping for location to switches and teleports
     for r,c,actions in switches:
         pos2switch[(r,c)] = actions
-    for r,c,r1,c1,r2,c2 in teleports:
-        pos2teleport[(r,c)] = (r1,c1,r2,c2)
-    # debug outputs
-    #print(pos2bridge)
-    #print(pos2switch)
-    #print(pos2teleport)
-    #print(start_position)
-    #print(start_bridges)
-    #print(end_position)
+    for r,c,r1,c1,r2,c2,selected in teleports:
+        pos2teleport[(r,c)] = (r1,c1,r2,c2,selected)
     # BFS solver implementation
     queue = [(start_position,tuple(start_bridges))]
-    prev = dict() # map state -> previous state (None for the root state)
+    prev = dict() # state -> (prev_state,moves,selected)
+    # moves is 1 arrow key in 'DRUL' or space (as '_') followed by an arrow key
+    # so represent as a string of 1 or 2 chars
+    # selected is only important in the split block case
     prev[queue[0]] = None
     visited = set()
     visited.add(queue[0])
@@ -150,45 +147,48 @@ def solver(puzzle):
         new_queue = []
         for pos,bridges in queue:
             bridges = list(bridges)
-            # TODO generate all state transitions V (where block doesnt fall)
-            #for V in transitions:
-            #    if V is solution:
-            #        return path
-            #    if V in visited: continue
-            #    visited.add(V)
-            #    newqueue.append(V)
-            #    prev[V] = (pos,bridges)
             r1,c1,r2,c2 = pos # row major order, assume state is valid
             assert r1 < r2 or (r1 == r2 and c1 <= c2) # row major order
-            new_pos_list = [] # generate all new positions by rolling a block
+             # generate all new positions by rolling a block
+            new_pos_list = [] # items are ((r1,c1,r2,c2),moves,new_selected)
             if r1 == r2 and c1 == c2: # vertical (block standing on a square)
-                new_pos_list.append((r1+1,c1,r1+2,c1)) # down
-                new_pos_list.append((r1,c1+1,r1,c1+2)) # right
-                new_pos_list.append((r1-2,c1,r1-1,c1)) # up
-                new_pos_list.append((r1,c1-2,r1,c1-1)) # left
+                new_pos_list.append(((r1+1,c1,r1+2,c1),'D',-1)) # down
+                new_pos_list.append(((r1,c1+1,r1,c1+2),'R',-1)) # right
+                new_pos_list.append(((r1-2,c1,r1-1,c1),'U',-1)) # up
+                new_pos_list.append(((r1,c1-2,r1,c1-1),'L',-1)) # left
             elif r1 == r2 and c1+1 == c2: # block horizontal along row
-                new_pos_list.append((r1+1,c1,r2+1,c2)) # down
-                new_pos_list.append((r1,c2+1,r1,c2+1)) # right
-                new_pos_list.append((r1-1,c1,r2-1,c2)) # up
-                new_pos_list.append((r1,c1-1,r1,c1-1)) # left
+                new_pos_list.append(((r1+1,c1,r2+1,c2),'D',-1)) # down
+                new_pos_list.append(((r1,c2+1,r1,c2+1),'R',-1)) # right
+                new_pos_list.append(((r1-1,c1,r2-1,c2),'U',-1)) # up
+                new_pos_list.append(((r1,c1-1,r1,c1-1),'L',-1)) # left
             elif c1 == c2 and r1+1 == r2: # block horizontal along column
-                new_pos_list.append((r2+1,c1,r2+1,c1)) # down
-                new_pos_list.append((r1,c1+1,r2,c2+1)) # right
-                new_pos_list.append((r1-1,c1,r1-1,c1)) # up
-                new_pos_list.append((r1,c1-1,r2,c2-1)) # left
+                new_pos_list.append(((r2+1,c1,r2+1,c1),'D',-1)) # down
+                new_pos_list.append(((r1,c1+1,r2,c2+1),'R',-1)) # right
+                new_pos_list.append(((r1-1,c1,r1-1,c1),'U',-1)) # up
+                new_pos_list.append(((r1,c1-1,r2,c2-1),'L',-1)) # left
             else: # block is split
-                for dr,dc in [(1,0),(0,1),(-1,0),(0,-1)]: # move amounts
+                # block isnt split at root so this wont fail
+                selected = prev[(pos,tuple(bridges))][2]
+                assert selected in [0,1]
+                # each move and key press
+                for dr,dc,move in [(1,0,'D'),(0,1,'R'),(-1,0,'U'),(0,-1,'L')]:
                     r1m,c1m = r1+dr,c1+dc # position 1 moved
                     r2m,c2m = r2+dr,c2+dc # position 2 moved
                     # add new position states, ensuring row major order
                     if r1m > r2 or (r1m == r2 and c1m > c2):
-                        new_pos_list.append((r2,c2,r1m,c1m))
-                    else: new_pos_list.append((r1m,c1m,r2,c2))
+                        new_pos_list.append(((r2,c2,r1m,c1m),
+                            ('_' if selected == 1 else '')+move,1))
+                    else:
+                        new_pos_list.append(((r1m,c1m,r2,c2),
+                            ('_' if selected == 1 else '')+move,0))
                     if r2m > r1 or (r2m == r1 and c2m > c1):
-                        new_pos_list.append((r1,c1,r2m,c2m))
-                    else: new_pos_list.append((r2m,c2m,r1,c1))
+                        new_pos_list.append(((r1,c1,r2m,c2m),
+                            ('_' if selected == 0 else '')+move,1))
+                    else:
+                        new_pos_list.append(((r2m,c2m,r1,c1),
+                            ('_' if selected == 0 else '')+move,0))
             # explore to neighboring vertices
-            for nr1,nc1,nr2,nc2 in new_pos_list:
+            for (nr1,nc1,nr2,nc2),moves,new_selected in new_pos_list:
                 if nr1 < 0 or nc1 < 0 or nr2 < 0 or nc2 < 0 \
                     or nr1 >= R or nc1 >= C or nr2 >= R or nc2 >= C:
                     continue # out of bounds
@@ -206,7 +206,7 @@ def solver(puzzle):
                     assert s1 == s2
                     if s1 == '-': continue # falls through orange square
                     if s1 == 'T': # teleport block
-                        nr1,nc1,nr2,nc2 = pos2teleport[(nr1,nc1)]
+                        nr1,nc1,nr2,nc2,new_selected = pos2teleport[(nr1,nc1)]
                     if s1 in 'XO': # switch bridge actions
                         bridge_actions += pos2switch[(nr1,nc1)]
                 else: # must only press switches if block part moved
@@ -228,27 +228,26 @@ def solver(puzzle):
                 if new_state in visited: continue
                 visited.add(new_state)
                 new_queue.append(new_state)
-                prev[new_state] = (pos,tuple(bridges))
+                prev[new_state] = ((pos,tuple(bridges)),moves,new_selected)
                 if new_pos == end_position: # solution
                     #print('solution found on bfs_layer =',bfs_layer)
-                    path = [new_state] # work backwards to root
-                    new_state = prev[new_state]
-                    while new_state != None:
-                        path.append(new_state)
-                        new_state = prev[new_state]
-                    return path[::-1] # return solution in order
+                    state,moves,selected = prev[new_state]
+                    all_moves = []
+                    while state != None:
+                        all_moves.append(moves)
+                        #print(state,moves)
+                        if prev[state] != None:
+                            state,moves,selected = prev[state]
+                        else: state = None
+                    return (all_moves[::-1],bfs_layer)
         queue = new_queue
         #print('bfs_layer =',bfs_layer,'len(queue) =',len(queue))
 
-path = solver(data[22])
-print('moves:',len(path)-1)
-for i in path: print(i)
-quit()
-
 total_moves = 0
 for puzzle in data:
-    path = solver(puzzle)
-    total_moves += len(path)-1
-    print('moves:',len(path)-1)
-    #print(path)
+    moves,length = solver(puzzle)
+    print('length =',length)
+    print(''.join(moves))
+    total_moves += length
 print('total_moves =',total_moves)
+
